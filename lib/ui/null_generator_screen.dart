@@ -5,6 +5,7 @@
 // =============================================================================
 
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -215,7 +216,6 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
           screenWidth: 1080,
           screenHeight: 1920,
         );
-        // Pack state and return rendered RGBA frame
         return Uint8List(1080 * 1920 * 4);
       },
     );
@@ -391,7 +391,7 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
       onTap: () => _pickSlotMedia(slot.index, isTopRow),
       child: Container(
         width: 58,
-        height: 68, // Slightly elongated for WIS aspect ratio
+        height: 68,
         margin: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
           color: slot.mediaPath != null ? const Color(0xFFE040FB).withOpacity(0.2) : const Color(0xFF1E1E2C),
@@ -428,10 +428,8 @@ class _Zakura3DScenePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Draw Background
     canvas.drawRect(Offset.zero & size, Paint()..color = scene.backgroundColor);
 
-    // 2. Draw 3D Floating Particles
     final pPaint = Paint()..style = PaintingStyle.fill;
     for (final p in scene.sortedParticles) {
       final pos = p.toScreen(size.width, size.height, min(size.width, size.height) * 1.35);
@@ -439,7 +437,6 @@ class _Zakura3DScenePainter extends CustomPainter {
       canvas.drawCircle(pos, p.size, pPaint);
     }
 
-    // 3. Draw 3D Polygon Quads with Edge Glows
     for (final quad in scene.sortedQuads) {
       final path = Path();
       path.moveTo(quad.screenPoints[0].dx, quad.screenPoints[0].dy);
@@ -448,10 +445,8 @@ class _Zakura3DScenePainter extends CustomPainter {
       }
       path.close();
 
-      // Face fill
       canvas.drawPath(path, Paint()..color = Colors.white.withOpacity(0.12));
 
-      // Luminous Edge Stroke
       final edgePaint = Paint()
         ..color = quad.edgeGlowColor
         ..style = PaintingStyle.stroke
