@@ -1,13 +1,12 @@
 // =============================================================================
-// Zakura - Master 3D Null & Geometric Polygon Projection Engine
-// Full 3D Euclidean Space, 6-Sided Box, Accordion Slices, Origami Cross Unfolding
-// Real Perspective Camera Projection, Depth Sorting & UV Orientation Lock
+// Zakura - Cinematic 2026 WIS 3D Engine
+// Full 5 Modes, Origami Cross Unfolding, Sliced Accordion, Diamond Split,
+// Dynamic Camera Zoom/Pan/Roll & 120 Circular Background Bokeh Particles
 // 100% Complete File - Zero Feature Omissions
 // =============================================================================
 
 import 'dart:math';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
@@ -39,11 +38,10 @@ class Vertex3D {
     return Vertex3D(tx, ty, tz, u, v);
   }
 
-  Offset toScreen(double screenW, double screenH, double fovFactor) {
-    final double depth = (z + 2.5); // Camera distance offset
+  Offset toScreen(double screenW, double screenH, double fovFactor, double camZ) {
+    final double depth = (z + camZ);
     if (depth <= 0.05) return Offset(screenW * 0.5, screenH * 0.5);
 
-    // Perspective divide
     final double projX = (x / depth) * fovFactor + (screenW * 0.5);
     final double projY = (y / depth) * fovFactor + (screenH * 0.5);
     return Offset(projX, projY);
@@ -53,8 +51,8 @@ class Vertex3D {
 class ProjectedQuad3D {
   final int faceId;
   final int mediaIndex;
-  final List<Vertex3D> vertices; // 4 corners in 3D
-  final List<Offset> screenPoints; // Projected 2D points
+  final List<Vertex3D> vertices;
+  final List<Offset> screenPoints;
   final double averageZ;
   final bool isFrontFacing;
   final Color edgeGlowColor;
@@ -70,23 +68,27 @@ class ProjectedQuad3D {
   });
 }
 
-class OrbitParticle3D {
+class BackgroundGlowParticle3D {
   final double x;
   final double y;
   final double z;
-  final double size;
+  final double coreSize;
+  final double haloSize;
   final Color color;
+  final double intensity;
 
-  const OrbitParticle3D({
+  const BackgroundGlowParticle3D({
     required this.x,
     required this.y,
     required this.z,
-    required this.size,
+    required this.coreSize,
+    required this.haloSize,
     required this.color,
+    required this.intensity,
   });
 
-  Offset toScreen(double screenW, double screenH, double fovFactor) {
-    final double depth = (z + 2.5);
+  Offset toScreen(double screenW, double screenH, double fovFactor, double camZ) {
+    final double depth = (z + camZ);
     if (depth <= 0.05) return Offset(screenW * 0.5, screenH * 0.5);
     final double projX = (x / depth) * fovFactor + (screenW * 0.5);
     final double projY = (y / depth) * fovFactor + (screenH * 0.5);
@@ -96,23 +98,21 @@ class OrbitParticle3D {
 
 class ZakuraEvaluatedScene {
   final List<ProjectedQuad3D> sortedQuads;
-  final List<OrbitParticle3D> sortedParticles;
+  final List<BackgroundGlowParticle3D> backgroundParticles;
   final double velocityX;
   final double velocityY;
   final bool isGreenScreenIntro;
   final Color backgroundColor;
-  final Matrix4 cameraViewProj;
-  final Matrix4 nullTransform;
+  final double cameraZ;
 
   const ZakuraEvaluatedScene({
     required this.sortedQuads,
-    required this.sortedParticles,
+    required this.backgroundParticles,
     required this.velocityX,
     required this.velocityY,
     required this.isGreenScreenIntro,
     required this.backgroundColor,
-    required this.cameraViewProj,
-    required this.nullTransform,
+    required this.cameraZ,
   });
 }
 
@@ -121,283 +121,258 @@ class ZakuraEvaluatedScene {
 // =============================================================================
 
 class NullGeneratorEngine {
-  /// Evaluates all 3D polygons, cameras, particle orbits, and sorting at timestampMs
   static ZakuraEvaluatedScene evaluateScene({
     required GeneratorConfig config,
     required double timestampMs,
     required double screenWidth,
     required double screenHeight,
   }) {
-    // 1. Timing: 0.30s (Rapid WIS) vs 1.0s (Category Pace)
     final double beatDurationMs = config.timing == BeatTiming.rapid300ms ? 300.0 : 1000.0;
     final int currentBeatIndex = (timestampMs / beatDurationMs).floor().clamp(0, config.totalBeats - 1);
     final double beatProgress = (timestampMs % beatDurationMs) / beatDurationMs;
 
-    // 2. Evaluate Speed Curve for this phase
     final curve = SpeedCurvePresets.getById(config.speedCurveId);
-    final double easedProgress = curve.transform(beatProgress);
+    final double t = curve.transform(beatProgress);
 
-    // 3. Intro vs Active Beats
     final bool isIntro = (currentBeatIndex == 0);
     bool isGreenScreen = false;
 
-    // 4. Camera & 3D Null Setup
-    final Matrix4 cameraMat = Matrix4.identity();
+    // Camera Transforms
+    double camX = 0.0;
+    double camY = 0.0;
+    double camZ = 2.4;
+    double camRoll = 0.0;
+
     final Matrix4 nullMat = Matrix4.identity();
-
-    double camDist = 2.4;
-    double rotX = 0.0;
-    double rotY = 0.0;
-    double rotZ = 0.0;
-
     double vx = 0.0;
     double vy = 0.0;
 
-    // PRNG based on seed + beat index for deterministic variations
-    final rng = Random(config.seed + (currentBeatIndex * 37));
-
-    // Raw 3D Quads buffer
+    final double fovFactor = min(screenWidth, screenHeight) * 1.55;
     final List<ProjectedQuad3D> quads = [];
 
-    // FOV Factor (pixels focal scale)
-    final double fovFactor = min(screenWidth, screenHeight) * 1.35;
+    // =========================================================================
+    // DYNAMIC CINEMATIC BEAT CHOREOGRAPHY
+    // =========================================================================
+    if (isIntro) {
+      if (config.mode == GeneratorMode.null3D) {
+        // Starts 100% full frame upright video, zooms out into 3D void
+        camZ = 1.05 + (t * 1.35);
+        camY = sin(t * pi) * -0.15;
+        nullMat.rotateY(t * 0.25);
+        vx = t * 15.0;
+      } else {
+        // Green screen flip entry
+        isGreenScreen = true;
+        camZ = 2.5;
+        nullMat.translate(0.0, (1.0 - t) * -2.2, 0.0);
+        nullMat.rotateX((1.0 - t) * (pi / 2));
+      }
+    } else {
+      final int stuntIdx = (currentBeatIndex - 1) % 4;
+
+      switch (stuntIdx) {
+        case 0:
+          // STUNT 1: 90-Degree Snap with Lateral Camera Whip
+          camZ = 2.4 - (sin(t * pi) * 0.35);
+          camX = sin(t * pi) * 0.30;
+          final double snapAngle = t * (pi / 2);
+          nullMat.rotateY(snapAngle);
+          nullMat.rotateX(sin(t * pi) * 0.15);
+          vx = 65.0 * (1.0 - t);
+          break;
+
+        case 1:
+          // STUNT 2: 3D Perspective Tumble with 35-degree Dutch Camera Roll
+          camZ = 2.2 + (sin(t * pi) * 0.40);
+          camRoll = sin(t * pi) * 0.60;
+          final double tumbleAngle = t * pi;
+          nullMat.rotateY(pi / 2 + tumbleAngle);
+          nullMat.rotateZ(tumbleAngle * 0.35);
+          vx = -45.0;
+          vy = 35.0;
+          break;
+
+        case 2:
+          // STUNT 3: Deep Z-Axis Plunge & Vertical Accordion Flip
+          camZ = 1.8 + ((1.0 - t) * 0.9);
+          camY = (t - 0.5) * 0.40;
+          nullMat.rotateX(t * pi);
+          nullMat.rotateY(sin(t * pi) * 0.25);
+          vy = 75.0 * (1.0 - t);
+          break;
+
+        case 3:
+          // STUNT 4: Explosive Vortex Spin into Settle Lock
+          camZ = 2.5;
+          final double spin = t * (pi * 1.5);
+          nullMat.rotateY(spin);
+          nullMat.rotateZ(sin(t * pi) * 0.40);
+          vx = 80.0;
+          break;
+      }
+    }
+
+    if (camRoll != 0.0) {
+      nullMat.rotateZ(camRoll);
+    }
+    nullMat.translate(camX, camY, 0.0);
 
     // =========================================================================
-    // GEOMETRIC DISPATCH ACROSS 5 MODES
+    // SPECIFIC GEOMETRY DISPATCH FOR ALL 5 MODES
     // =========================================================================
     switch (config.mode) {
-      // -----------------------------------------------------------------------
-      // MODE 1: 3D NULL (Starts full screen, zooms out into 3D orbit)
-      // -----------------------------------------------------------------------
       case GeneratorMode.null3D:
-        if (isIntro) {
-          // Starts flat full screen (camDist 1.0), zooms out into orbit
-          camDist = 1.0 + (easedProgress * 1.4);
-          rotY = easedProgress * 0.40;
-          rotX = sin(easedProgress * pi) * 0.15;
-        } else {
-          camDist = 2.4;
-          // Step orbit around the subject
-          final double baseAngle = (currentBeatIndex - 1) * (pi / 2);
-          rotY = baseAngle + (easedProgress * (pi / 2));
-          rotX = cos(currentBeatIndex + easedProgress) * 0.22;
-          rotZ = sin(currentBeatIndex * 1.5) * 0.12;
-
-          // Velocity deltas for Adevob Smear
-          vx = cos(rotY) * 38.0;
-          vy = sin(rotX) * 22.0;
-        }
-
-        nullMat.rotateY(rotY);
-        nullMat.rotateX(rotX);
-        nullMat.rotateZ(rotZ);
-
-        // Generate 6 faces of a true 3D Cube
         _generateCubeFaces(
           quads: quads,
           nullMat: nullMat,
           screenWidth: screenWidth,
           screenHeight: screenHeight,
           fovFactor: fovFactor,
+          camZ: camZ,
           activeBeat: currentBeatIndex,
           config: config,
         );
         break;
 
-      // -----------------------------------------------------------------------
-      // MODE 2: 2D FLIP LAYER (Accordion Sliced Panels, Green Screen Intro)
-      // -----------------------------------------------------------------------
       case GeneratorMode.flip2D:
-        if (isIntro) {
-          isGreenScreen = true;
-          // Falling entry flip
-          nullMat.translate(0.0, (1.0 - easedProgress) * -2.0, 0.0);
-          nullMat.rotateX((1.0 - easedProgress) * (pi / 2));
-        } else {
-          final double flipAngle = easedProgress * pi;
-          nullMat.rotateY(flipAngle);
-          vx = sin(flipAngle) * 48.0;
-        }
-
-        // Generate Sliced Accordion Strips (4 slats that fold with 2-frame stagger)
         _generateAccordionStripFaces(
           quads: quads,
           nullMat: nullMat,
           screenWidth: screenWidth,
           screenHeight: screenHeight,
           fovFactor: fovFactor,
+          camZ: camZ,
           activeBeat: currentBeatIndex,
-          easedProgress: easedProgress,
+          easedProgress: t,
           config: config,
           slatCount: 4,
         );
         break;
 
-      // -----------------------------------------------------------------------
-      // MODE 3: 3D FLIP LAYER (Green Screen Intro, Dynamic Perspective Orbit)
-      // -----------------------------------------------------------------------
       case GeneratorMode.flip3D:
-        if (isIntro) {
-          isGreenScreen = true;
-          camDist = 2.8;
-          rotY = (1.0 - easedProgress) * pi;
-          nullMat.rotateY(rotY);
-        } else {
-          final double dir = (currentBeatIndex % 2 == 0) ? 1.0 : -1.0;
-          rotY = easedProgress * pi * dir;
-          rotZ = sin(easedProgress * pi) * 0.25;
-          nullMat.rotateY(rotY);
-          nullMat.rotateZ(rotZ);
-          vx = dir * 42.0;
-          vy = cos(easedProgress * pi) * 18.0;
-        }
-
-        // Sliced Rhombus / Diamond split card
         _generateDiamondSplitFaces(
           quads: quads,
           nullMat: nullMat,
           screenWidth: screenWidth,
           screenHeight: screenHeight,
           fovFactor: fovFactor,
+          camZ: camZ,
           activeBeat: currentBeatIndex,
-          easedProgress: easedProgress,
+          easedProgress: t,
           config: config,
         );
         break;
 
-      // -----------------------------------------------------------------------
-      // MODE 4: 3D FLIP LAYER + NULL (3D Flip layer speed-ramps into 3D Box)
-      // -----------------------------------------------------------------------
       case GeneratorMode.flip3DPlusNull:
-        if (isIntro) {
-          isGreenScreen = true;
-        } else if (currentBeatIndex <= 2) {
-          // Card Flip Phase
-          final double flipAngle = easedProgress * pi;
-          nullMat.rotateY(flipAngle);
-          vx = 36.0;
+        if (currentBeatIndex <= 2) {
           _generateDiamondSplitFaces(
             quads: quads,
             nullMat: nullMat,
             screenWidth: screenWidth,
             screenHeight: screenHeight,
             fovFactor: fovFactor,
+            camZ: camZ,
             activeBeat: currentBeatIndex,
-            easedProgress: easedProgress,
+            easedProgress: t,
             config: config,
           );
         } else {
-          // 3D Cube Tumble Phase
-          nullMat.rotateX(easedProgress * (pi / 2));
-          nullMat.rotateY(easedProgress * pi);
-          vy = 40.0;
           _generateCubeFaces(
             quads: quads,
             nullMat: nullMat,
             screenWidth: screenWidth,
             screenHeight: screenHeight,
             fovFactor: fovFactor,
+            camZ: camZ,
             activeBeat: currentBeatIndex,
             config: config,
           );
         }
         break;
 
-      // -----------------------------------------------------------------------
-      // MODE 5: 2D FLIP LAYER + 3D NULL (Unfolding Origami Cross-Box)
-      // -----------------------------------------------------------------------
       case GeneratorMode.flip2DPlusNull3D:
-        if (isIntro) {
-          isGreenScreen = true;
-        } else {
-          nullMat.rotateY(easedProgress * (pi / 3));
-          nullMat.rotateX(sin(easedProgress * pi) * 0.20);
-          vx = 30.0;
-          _generateOrigamiCrossFaces(
-            quads: quads,
-            nullMat: nullMat,
-            screenWidth: screenWidth,
-            screenHeight: screenHeight,
-            fovFactor: fovFactor,
-            activeBeat: currentBeatIndex,
-            easedProgress: easedProgress,
-            config: config,
-          );
-        }
+        _generateOrigamiCrossFaces(
+          quads: quads,
+          nullMat: nullMat,
+          screenWidth: screenWidth,
+          screenHeight: screenHeight,
+          fovFactor: fovFactor,
+          camZ: camZ,
+          activeBeat: currentBeatIndex,
+          easedProgress: t,
+          config: config,
+        );
         break;
     }
 
-    // =========================================================================
-    // DEPTH SORTING (Painter's Algorithm: Draw furthest quads first)
-    // =========================================================================
     quads.sort((a, b) => b.averageZ.compareTo(a.averageZ));
 
     // =========================================================================
-    // 3D FLOATING ORBIT PARTICLES
+    // BACKGROUND VORTEX PARTICLES (Strictly Behind Cards, Circular Field, Camera-Locked)
     // =========================================================================
-    final List<OrbitParticle3D> particles = [];
+    final List<BackgroundGlowParticle3D> particles = [];
     if (config.enableParticles) {
       final double pTime = timestampMs * 0.001;
-      for (int i = 0; i < config.particleCount; i++) {
-        final double baseAngle = (i / config.particleCount.toDouble()) * 2 * pi;
-        final double rad = 1.3 + sin(baseAngle * 3.0 + pTime) * 0.45;
-        final double px = cos(baseAngle + pTime * 0.4) * rad;
-        final double py = sin(baseAngle * 2.0 + pTime * 0.25) * 0.9;
-        final double pz = sin(baseAngle + pTime * 0.4) * rad;
+      final pRng = Random(config.seed);
 
-        particles.add(OrbitParticle3D(
+      for (int i = 0; i < 120; i++) {
+        final double theta = (i / 120.0) * 2 * pi;
+        final double radialDist = 1.4 + (pRng.nextDouble() * 2.8);
+        final double pz = 1.6 + (pRng.nextDouble() * 4.5);
+
+        final double hoverX = sin(pTime * 0.15 + i) * 0.04;
+        final double hoverY = cos(pTime * 0.12 + i) * 0.04;
+
+        final double px = (cos(theta) * radialDist) + hoverX - (camX * 0.85);
+        final double py = (sin(theta) * radialDist) + hoverY - (camY * 0.85);
+
+        particles.add(BackgroundGlowParticle3D(
           x: px,
           y: py,
           z: pz,
-          size: config.particleSize,
+          coreSize: 2.2 + pRng.nextDouble() * 2.5,
+          haloSize: 7.0 + pRng.nextDouble() * 10.0,
           color: config.particleColor,
+          intensity: 0.45 + pRng.nextDouble() * 0.50,
         ));
       }
+
       particles.sort((a, b) => b.z.compareTo(a.z));
     }
 
     return ZakuraEvaluatedScene(
       sortedQuads: quads,
-      sortedParticles: particles,
+      backgroundParticles: particles,
       velocityX: vx,
       velocityY: vy,
       isGreenScreenIntro: isGreenScreen,
       backgroundColor: isGreenScreen ? const Color(0xFF00FF00) : config.backgroundColor,
-      cameraViewProj: cameraMat,
-      nullTransform: nullMat,
+      cameraZ: camZ,
     );
   }
 
   // ===========================================================================
-  // 3D MESH GENERATION SUB-ROUTINES
+  // 3D GEOMETRY SUBROUTINES
   // ===========================================================================
 
-  /// True 6-Sided Volumetric 3D Cube
   static void _generateCubeFaces({
     required List<ProjectedQuad3D> quads,
     required Matrix4 nullMat,
     required double screenWidth,
     required double screenHeight,
     required double fovFactor,
+    required double camZ,
     required int activeBeat,
     required GeneratorConfig config,
   }) {
-    const double s = 0.5; // Half-size
-
-    // 6 Faces definitions: [Top-Left, Top-Right, Bottom-Right, Bottom-Left]
+    const double s = 0.52;
     final faces = [
-      // Front (Z = +s)
-      [Vertex3D(-s, -s,  s, 0, 0), Vertex3D( s, -s,  s, 1, 0), Vertex3D( s,  s,  s, 1, 1), Vertex3D(-s,  s,  s, 0, 1)],
-      // Back (Z = -s)
-      [Vertex3D( s, -s, -s, 0, 0), Vertex3D(-s, -s, -s, 1, 0), Vertex3D(-s,  s, -s, 1, 1), Vertex3D( s,  s, -s, 0, 1)],
-      // Left (X = -s)
-      [Vertex3D(-s, -s, -s, 0, 0), Vertex3D(-s, -s,  s, 1, 0), Vertex3D(-s,  s,  s, 1, 1), Vertex3D(-s,  s, -s, 0, 1)],
-      // Right (X = +s)
-      [Vertex3D( s, -s,  s, 0, 0), Vertex3D( s, -s, -s, 1, 0), Vertex3D( s,  s, -s, 1, 1), Vertex3D( s,  s,  s, 0, 1)],
-      // Top (Y = -s)
-      [Vertex3D(-s, -s, -s, 0, 0), Vertex3D( s, -s, -s, 1, 0), Vertex3D( s, -s,  s, 1, 1), Vertex3D(-s, -s,  s, 0, 1)],
-      // Bottom (Y = +s)
-      [Vertex3D(-s,  s,  s, 0, 0), Vertex3D( s,  s,  s, 1, 0), Vertex3D( s,  s, -s, 1, 1), Vertex3D(-s,  s, -s, 0, 1)],
+      [const Vertex3D(-s, -s,  s, 0, 0), const Vertex3D( s, -s,  s, 1, 0), const Vertex3D( s,  s,  s, 1, 1), const Vertex3D(-s,  s,  s, 0, 1)],
+      [const Vertex3D( s, -s, -s, 0, 0), const Vertex3D(-s, -s, -s, 1, 0), const Vertex3D(-s,  s, -s, 1, 1), const Vertex3D( s,  s, -s, 0, 1)],
+      [const Vertex3D(-s, -s, -s, 0, 0), const Vertex3D(-s, -s,  s, 1, 0), const Vertex3D(-s,  s,  s, 1, 1), const Vertex3D(-s,  s, -s, 0, 1)],
+      [const Vertex3D( s, -s,  s, 0, 0), const Vertex3D( s, -s, -s, 1, 0), const Vertex3D( s,  s, -s, 1, 1), const Vertex3D( s,  s,  s, 0, 1)],
+      [const Vertex3D(-s, -s, -s, 0, 0), const Vertex3D( s, -s, -s, 1, 0), const Vertex3D( s, -s,  s, 1, 1), const Vertex3D(-s, -s,  s, 0, 1)],
+      [const Vertex3D(-s,  s,  s, 0, 0), const Vertex3D( s,  s,  s, 1, 0), const Vertex3D( s,  s, -s, 1, 1), const Vertex3D(-s,  s, -s, 0, 1)],
     ];
 
     for (int i = 0; i < 6; i++) {
@@ -409,36 +384,34 @@ class NullGeneratorEngine {
         screenWidth: screenWidth,
         screenHeight: screenHeight,
         fovFactor: fovFactor,
+        camZ: camZ,
         quads: quads,
         config: config,
       );
     }
   }
 
-  /// Accordion Sliced Vertical Slat Panels
   static void _generateAccordionStripFaces({
     required List<ProjectedQuad3D> quads,
     required Matrix4 nullMat,
     required double screenWidth,
     required double screenHeight,
     required double fovFactor,
+    required double camZ,
     required int activeBeat,
     required double easedProgress,
     required GeneratorConfig config,
     required int slatCount,
   }) {
-    const double totalW = 1.0;
-    const double totalH = 1.0;
+    const double totalW = 1.05;
     final double slatW = totalW / slatCount;
 
     for (int i = 0; i < slatCount; i++) {
-      final double x0 = -0.5 + (i * slatW);
-      final double x1 = x0 + slatW;
+      final double x0 = -0.52 + (i * slatW);
       final double u0 = i / slatCount.toDouble();
       final double u1 = (i + 1) / slatCount.toDouble();
 
-      // Stagger rotation per slat
-      final double slatDelay = (i / slatCount.toDouble()) * 0.25;
+      final double slatDelay = (i / slatCount.toDouble()) * 0.28;
       final double slatProgress = ((easedProgress - slatDelay) / (1.0 - slatDelay)).clamp(0.0, 1.0);
       final double slatRot = slatProgress * pi;
 
@@ -448,10 +421,10 @@ class NullGeneratorEngine {
       slatMat.translate(-(slatW * 0.5), 0.0, 0.0);
 
       final verts = [
-        Vertex3D(0.0, -0.5, 0.0, u0, 0.0),
-        Vertex3D(slatW, -0.5, 0.0, u1, 0.0),
-        Vertex3D(slatW,  0.5, 0.0, u1, 1.0),
-        Vertex3D(0.0,  0.5, 0.0, u0, 1.0),
+        Vertex3D(0.0, -0.65, 0.0, u0, 0.0),
+        Vertex3D(slatW, -0.65, 0.0, u1, 0.0),
+        Vertex3D(slatW,  0.65, 0.0, u1, 1.0),
+        Vertex3D(0.0,  0.65, 0.0, u0, 1.0),
       ];
 
       _projectAndAppendQuad(
@@ -462,57 +435,58 @@ class NullGeneratorEngine {
         screenWidth: screenWidth,
         screenHeight: screenHeight,
         fovFactor: fovFactor,
+        camZ: camZ,
         quads: quads,
         config: config,
       );
     }
   }
 
-  /// Diamond / Rhombus Split WIS Cards
   static void _generateDiamondSplitFaces({
     required List<ProjectedQuad3D> quads,
     required Matrix4 nullMat,
     required double screenWidth,
     required double screenHeight,
     required double fovFactor,
+    required double camZ,
     required int activeBeat,
     required double easedProgress,
     required GeneratorConfig config,
   }) {
-    // Upper Diagonal Half
-    final upperMat = nullMat.clone()..rotateZ(0.785); // 45 deg rhombus
-    final vertsUpper = [
-      const Vertex3D(-0.5, -0.5, 0.0, 0.0, 0.0),
-      const Vertex3D( 0.5, -0.5, 0.0, 1.0, 0.0),
-      const Vertex3D( 0.5,  0.5, 0.0, 1.0, 1.0),
-      const Vertex3D(-0.5,  0.5, 0.0, 0.0, 1.0),
+    final diamondMat = nullMat.clone()..rotateZ(0.785); // 45 deg rhombus
+    final verts = [
+      const Vertex3D(-0.52, -0.52, 0.0, 0.0, 0.0),
+      const Vertex3D( 0.52, -0.52, 0.0, 1.0, 0.0),
+      const Vertex3D( 0.52,  0.52, 0.0, 1.0, 1.0),
+      const Vertex3D(-0.52,  0.52, 0.0, 0.0, 1.0),
     ];
 
     _projectAndAppendQuad(
       faceId: 0,
       mediaIndex: activeBeat % config.totalBeats,
-      rawVertices: vertsUpper,
-      nullMat: upperMat,
+      rawVertices: verts,
+      nullMat: diamondMat,
       screenWidth: screenWidth,
       screenHeight: screenHeight,
       fovFactor: fovFactor,
+      camZ: camZ,
       quads: quads,
       config: config,
     );
   }
 
-  /// Unfolding Origami Cross-Box Faces (Yoruichi Clip Style)
   static void _generateOrigamiCrossFaces({
     required List<ProjectedQuad3D> quads,
     required Matrix4 nullMat,
     required double screenWidth,
     required double screenHeight,
     required double fovFactor,
+    required double camZ,
     required int activeBeat,
     required double easedProgress,
     required GeneratorConfig config,
   }) {
-    const double s = 0.5;
+    const double s = 0.52;
     final double foldAngle = (1.0 - easedProgress) * (pi / 2); // 90 deg -> 0 deg flat
 
     // Center Face
@@ -529,6 +503,7 @@ class NullGeneratorEngine {
       screenWidth: screenWidth,
       screenHeight: screenHeight,
       fovFactor: fovFactor,
+      camZ: camZ,
       quads: quads,
       config: config,
     );
@@ -551,6 +526,7 @@ class NullGeneratorEngine {
       screenWidth: screenWidth,
       screenHeight: screenHeight,
       fovFactor: fovFactor,
+      camZ: camZ,
       quads: quads,
       config: config,
     );
@@ -572,14 +548,12 @@ class NullGeneratorEngine {
       screenWidth: screenWidth,
       screenHeight: screenHeight,
       fovFactor: fovFactor,
+      camZ: camZ,
       quads: quads,
       config: config,
     );
   }
 
-  // ===========================================================================
-  // VERTEX PROJECTION & BACKFACE CULLING
-  // ===========================================================================
   static void _projectAndAppendQuad({
     required int faceId,
     required int mediaIndex,
@@ -588,6 +562,7 @@ class NullGeneratorEngine {
     required double screenWidth,
     required double screenHeight,
     required double fovFactor,
+    required double camZ,
     required List<ProjectedQuad3D> quads,
     required GeneratorConfig config,
   }) {
@@ -598,16 +573,14 @@ class NullGeneratorEngine {
     for (final v in rawVertices) {
       final tv = v.transform(nullMat);
       transformed.add(tv);
-      screenPoints.add(tv.toScreen(screenWidth, screenHeight, fovFactor));
+      screenPoints.add(tv.toScreen(screenWidth, screenHeight, fovFactor, camZ));
       zSum += tv.z;
     }
 
-    // 2D Cross-Product to test Backface winding
     final double crossZ = (screenPoints[1].dx - screenPoints[0].dx) * (screenPoints[2].dy - screenPoints[0].dy) -
                           (screenPoints[1].dy - screenPoints[0].dy) * (screenPoints[2].dx - screenPoints[0].dx);
     final bool isFrontFacing = crossZ > 0.0;
 
-    // Edge Glow color calculation
     Color glowColor = const Color(0xFFE040FB);
     if (config.edgeEffect == EdgeEffectType.sapphireEdgeGlow) {
       glowColor = const Color(0xFF00E5FF);
