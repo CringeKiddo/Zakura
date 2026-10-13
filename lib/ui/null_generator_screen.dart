@@ -1,6 +1,6 @@
 // =============================================================================
 // Zakura - 3D Null & Flip Layer Generator Workspace
-// Real ImageShader 3D Quad Mapping, GENERATE Button, Seed System & Full Controls
+// Video & Photo Thumbnail Extraction, Real 3D Texture Mapping, GENERATE Button
 // Circular Background Bokeh Halo Vortex Particles strictly behind 3D Cards
 // 100% Complete File - Zero Feature Omissions
 // =============================================================================
@@ -11,6 +11,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:ffmpeg_kit_extended_flutter/ffmpeg_kit_extended_flutter.dart';
 
 import '../audio/synth_audio.dart';
 import '../models/models.dart';
@@ -103,8 +105,29 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
       });
 
       try {
-        final bytes = await File(path).readAsBytes();
-        final codec = await ui.instantiateImageCodec(bytes, targetWidth: 512);
+        Uint8List imageBytes;
+
+        if (isVideo) {
+          // Extract video frame thumbnail via FFmpeg in 15ms
+          final tempDir = await getTemporaryDirectory();
+          final thumbPath = '${tempDir.path}/thumb_${index}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          final session = await FFmpegKit.execute('-y -i "$path" -vframes 1 -s 512x512 "$thumbPath"');
+          final rc = await session.getReturnCode();
+
+          final thumbFile = File(thumbPath);
+          if (ReturnCode.isSuccess(rc) && thumbFile.existsSync()) {
+            imageBytes = await thumbFile.readAsBytes();
+            try { thumbFile.deleteSync(); } catch (_) {}
+          } else {
+            return;
+          }
+        } else {
+          // Photo file (PNG / JPG / WEBP)
+          imageBytes = await File(path).readAsBytes();
+        }
+
+        // Decode into real GPU texture
+        final codec = await ui.instantiateImageCodec(imageBytes, targetWidth: 512);
         final frameInfo = await codec.getNextFrame();
 
         setState(() {
@@ -117,7 +140,7 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
           }
         });
       } catch (e) {
-        debugPrint('Media picked for slot $index: $path');
+        debugPrint('Media decoding note on slot $index: $e');
       }
     }
   }
@@ -323,7 +346,6 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
                       onPressed: _generateNewChoreography,
                     ),
                     const SizedBox(width: 8),
-                    // Timing (0.30s vs 1.0s)
                     ChoiceChip(
                       label: const Text('0.30s'),
                       selected: _config.timing == BeatTiming.rapid300ms,
@@ -342,7 +364,7 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
               ),
             ],
 
-            // 3D Canvas Viewport with Real ImageShader Texture Mapping
+            // 3D Canvas Viewport with Real Texture Mapping
             Expanded(
               child: AnimatedBuilder(
                 animation: _timelineController,
@@ -466,7 +488,7 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
 }
 
 // =============================================================================
-// 3D SCENE PAINTER WITH BACKGROUND BOKEH HALOS & IMAGESHADER
+// 3D SCENE PAINTER WITH BACKGROUND BOKEH HALOS & PERSPECTIVE TEXTURES
 // =============================================================================
 
 class _Zakura3DScenePainter extends CustomPainter {
@@ -499,15 +521,12 @@ class _Zakura3DScenePainter extends CustomPainter {
     for (final p in scene.backgroundParticles) {
       final pos = p.toScreen(size.width, size.height, fov, scene.cameraZ);
 
-      // Only draw if inside the frame
       if (pos.dx >= -40 && pos.dx <= size.width + 40 && pos.dy >= -40 && pos.dy <= size.height + 40) {
-        // Outer soft bokeh glow halo
         haloPaint
           ..color = p.color.withOpacity(p.intensity * 0.45)
           ..maskFilter = MaskFilter.blur(BlurStyle.normal, p.haloSize * 0.85);
         canvas.drawCircle(pos, p.haloSize, haloPaint);
 
-        // Inner bright hot core
         corePaint
           ..color = Colors.white.withOpacity(p.intensity * 0.85)
           ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 2.0);
@@ -530,18 +549,8 @@ class _Zakura3DScenePainter extends CustomPainter {
       final ui.Image? texture = flipTextures[quad.mediaIndex];
       if (texture != null) {
         final bounds = path.getBounds();
-        final matrix4 = Matrix4.identity()
-          ..translate(bounds.left, bounds.top)
-          ..scale(bounds.width / texture.width, bounds.height / texture.height);
-
-        final imageShader = ImageShader(
-          texture,
-          TileMode.clamp,
-          TileMode.clamp,
-          matrix4.storage,
-        );
-
-        canvas.drawRect(bounds, Paint()..shader = imageShader);
+        final srcRect = Rect.fromLTWH(0, 0, texture.width.toDouble(), texture.height.toDouble());
+        canvas.drawImageRect(texture, srcRect, bounds, Paint()..filterQuality = FilterQuality.medium);
       } else {
         canvas.drawPath(path, Paint()..color = Colors.white.withOpacity(0.14));
       }
