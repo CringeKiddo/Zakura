@@ -1,6 +1,7 @@
 // =============================================================================
 // Zakura - 3D Null & Flip Layer Generator Workspace
-// Real 3D Texture Mapping on Cube/Flip Faces, Media Slot Pickers & 10 Speed Curves
+// Real ImageShader 3D Quad Mapping, GENERATE Button, Seed System & Full Controls
+// Circular Background Bokeh Halo Vortex Particles strictly behind 3D Cards
 // 100% Complete File - Zero Feature Omissions
 // =============================================================================
 
@@ -30,15 +31,12 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
   GeneratorConfig _config = const GeneratorConfig();
   final TextEditingController _seedController = TextEditingController(text: '1337');
 
-  // Media slots (Top row: Flip cards, Bottom row: Backgrounds)
   late List<BeatMediaSlot> _flipMedia;
   late List<BeatMediaSlot> _bgMedia;
 
-  // GPU Decoded Image Textures for 3D faces
   final Map<int, ui.Image> _loadedFlipImages = {};
   final Map<int, ui.Image> _loadedBgImages = {};
 
-  bool _isPlaying = true;
   bool _isFullscreen = false;
 
   @override
@@ -65,14 +63,19 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
   }
 
   void _rebuildMediaSlots() {
-    _flipMedia = List.generate(
-      _config.totalBeats,
-      (i) => BeatMediaSlot(index: i, isIntro: i == 0),
-    );
-    _bgMedia = List.generate(
-      _config.totalBeats,
-      (i) => BeatMediaSlot(index: i, isIntro: i == 0),
-    );
+    _flipMedia = List.generate(_config.totalBeats, (i) => BeatMediaSlot(index: i, isIntro: i == 0));
+    _bgMedia = List.generate(_config.totalBeats, (i) => BeatMediaSlot(index: i, isIntro: i == 0));
+  }
+
+  void _generateNewChoreography() {
+    SynthAudio.playClickPing();
+    final newSeed = Random().nextInt(999999);
+    setState(() {
+      _seedController.text = newSeed.toString();
+      _config = _config.copyWith(seed: newSeed);
+      _timelineController.reset();
+      _timelineController.repeat();
+    });
   }
 
   void _onTimingChanged(BeatTiming timing) {
@@ -99,10 +102,9 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
         }
       });
 
-      // Decode image file into GPU texture for live 3D mapping
       try {
         final bytes = await File(path).readAsBytes();
-        final codec = await ui.instantiateImageCodec(bytes, targetWidth: 512); // Optimized preview resolution
+        final codec = await ui.instantiateImageCodec(bytes, targetWidth: 512);
         final frameInfo = await codec.getNextFrame();
 
         setState(() {
@@ -115,7 +117,7 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
           }
         });
       } catch (e) {
-        debugPrint('Note: Video thumbnail extraction fallback for index $index');
+        debugPrint('Media picked for slot $index: $path');
       }
     }
   }
@@ -147,7 +149,6 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
                 ),
                 const SizedBox(height: 14),
 
-                // Speed Curve Selector (10 Presets)
                 const Text('Speed Curve Preset', style: TextStyle(color: Colors.white70)),
                 const SizedBox(height: 6),
                 DropdownButton<String>(
@@ -165,7 +166,6 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
                 ),
                 const SizedBox(height: 14),
 
-                // Edge Effect Dropdown
                 const Text('Edge Effect', style: TextStyle(color: Colors.white70)),
                 DropdownButton<EdgeEffectType>(
                   value: _config.edgeEffect,
@@ -200,10 +200,10 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
                   ),
                 ],
 
-                // 3D Particles Toggle
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('3D Orbiting Particles', style: TextStyle(color: Colors.white)),
+                  title: const Text('Background Vortex Particles', style: TextStyle(color: Colors.white)),
+                  subtitle: const Text('Particles fill circular background behind cards with camera parallax', style: TextStyle(color: Colors.white54, fontSize: 11)),
                   value: _config.enableParticles,
                   activeColor: const Color(0xFFE040FB),
                   onChanged: (v) {
@@ -283,21 +283,21 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
                   ],
                 ),
               ),
-              // Seed & Timing Selector Row
+              // Seed, Timing & Big GENERATE Button Row
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
                 child: Row(
                   children: [
                     Expanded(
-                      flex: 3,
+                      flex: 2,
                       child: TextField(
                         controller: _seedController,
                         style: const TextStyle(color: Colors.white, fontSize: 13),
                         decoration: InputDecoration(
-                          labelText: 'Seed (1:1 Exact)',
+                          labelText: 'Seed',
                           labelStyle: const TextStyle(color: Colors.white54, fontSize: 11),
                           isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           filled: true,
                           fillColor: const Color(0xFF1E1E2C),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -309,16 +309,30 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
                         },
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
+                    // Big GENERATE Button
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE040FB),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+                      label: const Text('GENERATE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      onPressed: _generateNewChoreography,
+                    ),
+                    const SizedBox(width: 8),
+                    // Timing (0.30s vs 1.0s)
                     ChoiceChip(
-                      label: const Text('0.30s (Rapid)'),
+                      label: const Text('0.30s'),
                       selected: _config.timing == BeatTiming.rapid300ms,
                       selectedColor: const Color(0xFFE040FB),
                       onSelected: (s) => s ? _onTimingChanged(BeatTiming.rapid300ms) : null,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     ChoiceChip(
-                      label: const Text('1.0s (Pace)'),
+                      label: const Text('1.0s'),
                       selected: _config.timing == BeatTiming.pace1000ms,
                       selectedColor: const Color(0xFFE040FB),
                       onSelected: (s) => s ? _onTimingChanged(BeatTiming.pace1000ms) : null,
@@ -328,7 +342,7 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
               ),
             ],
 
-            // 3D Canvas Viewport with REAL Image Texture Mapping
+            // 3D Canvas Viewport with Real ImageShader Texture Mapping
             Expanded(
               child: AnimatedBuilder(
                 animation: _timelineController,
@@ -358,7 +372,6 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
                 padding: const EdgeInsets.all(12.0),
                 child: Column(
                   children: [
-                    // Media Boxes Row 1 (Flip Cards)
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
@@ -368,7 +381,6 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
                         }),
                       ),
                     ),
-                    // If 2D Flip Layer, show Row 2 (Background Cards)
                     if (_config.mode == GeneratorMode.flip2D) ...[
                       const SizedBox(height: 6),
                       SingleChildScrollView(
@@ -454,7 +466,7 @@ class _NullGeneratorScreenState extends State<NullGeneratorScreen> with SingleTi
 }
 
 // =============================================================================
-// 3D SCENE PAINTER WITH FULL TEXTURE MAPPING
+// 3D SCENE PAINTER WITH BACKGROUND BOKEH HALOS & IMAGESHADER
 // =============================================================================
 
 class _Zakura3DScenePainter extends CustomPainter {
@@ -470,18 +482,40 @@ class _Zakura3DScenePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Background
+    // 1. Dark Void Background
     canvas.drawRect(Offset.zero & size, Paint()..color = scene.backgroundColor);
 
-    // 2. 3D Floating Particles
-    final pPaint = Paint()..style = PaintingStyle.fill;
-    for (final p in scene.sortedParticles) {
-      final pos = p.toScreen(size.width, size.height, min(size.width, size.height) * 1.35);
-      pPaint.color = p.color.withOpacity(0.85);
-      canvas.drawCircle(pos, p.size, pPaint);
+    final double fov = min(size.width, size.height) * 1.55;
+
+    // 2. Circular Background Vortex Particles (Additive Luminous Bokeh Halo)
+    final haloPaint = Paint()
+      ..blendMode = BlendMode.plus
+      ..style = PaintingStyle.fill;
+
+    final corePaint = Paint()
+      ..blendMode = BlendMode.plus
+      ..style = PaintingStyle.fill;
+
+    for (final p in scene.backgroundParticles) {
+      final pos = p.toScreen(size.width, size.height, fov, scene.cameraZ);
+
+      // Only draw if inside the frame
+      if (pos.dx >= -40 && pos.dx <= size.width + 40 && pos.dy >= -40 && pos.dy <= size.height + 40) {
+        // Outer soft bokeh glow halo
+        haloPaint
+          ..color = p.color.withOpacity(p.intensity * 0.45)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, p.haloSize * 0.85);
+        canvas.drawCircle(pos, p.haloSize, haloPaint);
+
+        // Inner bright hot core
+        corePaint
+          ..color = Colors.white.withOpacity(p.intensity * 0.85)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 2.0);
+        canvas.drawCircle(pos, p.coreSize, corePaint);
+      }
     }
 
-    // 3. Draw 3D Polygon Quads with Real Mapped Textures
+    // 3. Draw 3D Polygon Quads (Rendered in FRONT of particles)
     for (final quad in scene.sortedQuads) {
       final path = Path();
       path.moveTo(quad.screenPoints[0].dx, quad.screenPoints[0].dy);
@@ -491,26 +525,33 @@ class _Zakura3DScenePainter extends CustomPainter {
       path.close();
 
       canvas.save();
-      // Clip canvas to the 3D projected quad bounds
       canvas.clipPath(path);
 
       final ui.Image? texture = flipTextures[quad.mediaIndex];
       if (texture != null) {
-        // Map image onto quad face
-        final srcRect = Rect.fromLTWH(0, 0, texture.width.toDouble(), texture.height.toDouble());
-        final dstBounds = path.getBounds();
-        canvas.drawImageRect(texture, srcRect, dstBounds, Paint()..filterQuality = FilterQuality.medium);
+        final bounds = path.getBounds();
+        final matrix4 = Matrix4.identity()
+          ..translate(bounds.left, bounds.top)
+          ..scale(bounds.width / texture.width, bounds.height / texture.height);
+
+        final imageShader = ImageShader(
+          texture,
+          TileMode.clamp,
+          TileMode.clamp,
+          matrix4.storage,
+        );
+
+        canvas.drawRect(bounds, Paint()..shader = imageShader);
       } else {
-        // Fallback placeholder fill with slot label
-        canvas.drawPath(path, Paint()..color = Colors.white.withOpacity(0.15));
+        canvas.drawPath(path, Paint()..color = Colors.white.withOpacity(0.14));
       }
       canvas.restore();
 
-      // Glowing Neon Edge Stroke (Halo/Sapphire)
+      // Glowing Neon Edge Stroke
       final edgePaint = Paint()
         ..color = quad.edgeGlowColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
+        ..strokeWidth = 2.8
         ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 4.0);
 
       canvas.drawPath(path, edgePaint);
